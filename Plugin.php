@@ -9,11 +9,13 @@ use Typecho\Widget\Helper\Layout;
 
 /**
  * S3 协议上传插件
+ *  ① 路径格式从 /year/month 改为 /cid
+ *  ② 简化数据库字段写入
  * 
  * @package S3Upload
- * @author 老孙
- * @version 1.3.3
- * @link https://www.imsun.org
+ * @author if1y
+ * @version 1.3.3_custom
+ * @link https://github.com/if1y/Typecho-Plugin-S3Upload
  * @dependence 1.3-*
  */
 class S3Upload_Plugin implements PluginInterface

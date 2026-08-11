@@ -27,7 +27,7 @@ class S3Upload_StreamUploader
      * @param array $file 上传的文件信息
      * @return array|bool
      */
-    public function handleUpload($file)
+    public function handleUpload($file, $parentCid = 0)
     {
         try {
             // 记录开始上传的详细信息
@@ -39,8 +39,8 @@ class S3Upload_StreamUploader
                 throw new Exception('文件验证失败');
             }
 
-            // 生成基础存储路径（年月/文件名）
-            $path = $this->s3Client->generatePath($file);
+            // 生成存储路径（{parentCid}/{文件名}）
+            $path = $this->s3Client->generatePath($file, $parentCid);
             S3Upload_Utils::log("生成存储路径: {$path}", 'debug');
 
             // 上传到S3
@@ -67,9 +67,7 @@ class S3Upload_StreamUploader
                 'path' => $path,
                 'size' => $file['size'],
                 'type' => $extension,
-                'mime' => $mimeType,
-                'extension' => $extension,
-                'url'  => $url
+                'mime' => $mimeType
             );
 
         } catch (Exception $e) {

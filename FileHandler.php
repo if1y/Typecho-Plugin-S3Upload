@@ -56,8 +56,11 @@ class S3Upload_FileHandler
                 $file['name'] = $webpName;
             }
 
+            // 获取父级 CID（上传时关联的文章/页面 CID）
+            $parentCid = isset($_REQUEST['cid']) ? intval($_REQUEST['cid']) : 0;
+
             $uploader = new S3Upload_StreamUploader();
-            $result = $uploader->handleUpload($file);
+            $result = $uploader->handleUpload($file, $parentCid);
 
             if ($tempFile && file_exists($tempFile)) {
                 @unlink($tempFile);
@@ -69,19 +72,13 @@ class S3Upload_FileHandler
                     $result['name'] = $webpName;
                     $result['type'] = 'webp';
                     $result['mime'] = 'image/webp';
-                    $result['extension'] = 'webp';
                 }
                 return [
                     'name'      => $result['name'],
                     'path'      => $result['path'],
                     'size'      => $result['size'],
                     'type'      => $result['type'],
-                    'mime'      => $result['mime'],
-                    'extension' => $result['extension'],
-                    'created'   => time(),
-                    'attachment'=> (object)['path' => $result['path']],
-                    'isImage'   => self::isImage($result['mime']),
-                    'url'       => $result['url']
+                    'mime'      => $result['mime']
                 ];
             }
 
@@ -113,8 +110,16 @@ class S3Upload_FileHandler
     public static function modifyHandle($content, $file)
     {
         try {
+            // 获取父级 CID（从原附件记录中读取）
+            $parentCid = 0;
+            if (is_array($content)) {
+                $parentCid = isset($content['parent']) ? intval($content['parent']) : 0;
+            } elseif (is_object($content)) {
+                $parentCid = isset($content->parent) ? intval($content->parent) : 0;
+            }
+
             $uploader = new S3Upload_StreamUploader();
-            return $uploader->handleUpload($file);
+            return $uploader->handleUpload($file, $parentCid);
         } catch (Exception $e) {
             S3Upload_Utils::log("修改文件错误: " . $e->getMessage(), 'error');
             return false;

@@ -268,21 +268,25 @@ class S3Upload_S3Client
     }
 
     /**
-     * 生成存储路径
+     * 生成存储路径（使用父级 CID 作为目录名）
+     *
+     * @param array $file 上传文件信息
+     * @param int $parentCid 父级 CID（文章/页面 CID），0 表示未关联
+     * @return string
      */
-    public function generatePath($file)
+    public function generatePath($file, $parentCid = 0)
     {
         $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
         $ext = $ext ? strtolower($ext) : '';
 
-        $date = new \Typecho\Date();
-        $path = $date->year . '/' . $date->month;
-
         // 生成文件名
         $fileName = sprintf('%u', crc32(uniqid())) . ($ext ? '.' . $ext : '');
 
-        // 合并路径
-        return $path . '/' . $fileName;
+        // 使用父级 CID 作为目录名（parent=0 表示未归档，用 0 目录）
+        $parentCid = intval($parentCid);
+
+        // 合并路径: {parentCid}/{filename}
+        return $parentCid . '/' . $fileName;
     }
 
     /**
