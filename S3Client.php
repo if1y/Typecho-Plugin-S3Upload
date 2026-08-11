@@ -138,6 +138,175 @@ class S3Upload_S3Client
     }
 
     /**
+     * 获取 S3 对象元数据（HEAD 请求）
+     *
+     * @param string $path 对象路径
+     * @return array 包含 lastModified 等元数据
+     * @throws Exception
+     */
+    public function headObject($path)
+    {
+        $date = gmdate('Ymd\THis\Z');
+        $shortDate = substr($date, 0, 8);
+
+        $canonical_uri = $this->buildCanonicalUri($path);
+        $canonical_querystring = '';
+
+        $headers = array(
+            'host' => $this->endpoint,
+            'x-amz-content-sha256' => 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+            'x-amz-date' => $date
+        );
+
+        $signature = $this->getSignature(
+            'HEAD',
+            $canonical_uri,
+            $canonical_querystring,
+            $headers,
+            'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+            $shortDate
+        );
+
+        $ch = curl_init();
+        $url = 'https://' . $this->endpoint . $canonical_uri;
+
+        $curlHeaders = array();
+        foreach ($headers as $key => $value) {
+            $curlHeaders[] = $key . ': ' . $value;
+        }
+        $curlHeaders[] = 'Authorization: ' . $signature;
+
+        $sslVerify = isset($this->options->sslVerify) && $this->options->sslVerify === 'true';
+
+        curl_setopt_array($ch, array(
+            CURLOPT_URL => $url,
+            CURLOPT_HTTPHEADER => $curlHeaders,
+            CURLOPT_CUSTOMREQUEST => 'HEAD',
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
+            CURLOPT_HEADER => true,
+            CURLOPT_NOBODY => true
+        ));
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode !== 200) {
+            throw new Exception("获取对象元数据失败，HTTP状态码：{$httpCode}，路径：{$path}");
+        }
+
+        // 解析响应头中的 Last-Modified
+        $lastModified = '';
+        foreach (explode("\r\n", $response) as $line) {
+            if (stripos($line, 'Last-Modified:') === 0) {
+                $lastModified = trim(substr($line, 14));
+                break;
+            }
+        }
+
+        return array(
+            'lastModified' => $lastModified
+        );
+    }
+
+    /**
+     * 复制 S3 对象（服务端复制，不经过本地服务器）
+     * 会读取源文件的 Last-Modified 并写入 x-amz-meta-mtime 自定义元数据以保留时间戳
+     *
+     * @param string $sourcePath 源对象路径
+     * @param string $destPath 目标对象路径
+     * @return array
+     * @throws Exception
+     */
+    public function copyObject($sourcePath, $destPath)
+    {
+        S3Upload_Utils::log("S3Client::copyObject 开始 - 源: {$sourcePath} -> 目标: {$destPath}", 'debug');
+
+        // 1. 先 HEAD 获取源文件的 Last-Modified
+        $headMeta = $this->headObject($sourcePath);
+        $lastModified = $headMeta['lastModified'];
+
+        S3Upload_Utils::log("源文件 Last-Modified: {$lastModified}", 'debug');
+
+        // 2. 将 Last-Modified 转为 Unix 时间戳（用于 x-amz-meta-mtime）
+        $mtime = 0;
+        if (!empty($lastModified)) {
+            $mtime = strtotime($lastModified);
+        }
+
+        $date = gmdate('Ymd\THis\Z');
+        $shortDate = substr($date, 0, 8);
+
+        $sourceObjectKey = $this->buildObjectKey($sourcePath);
+        $destCanonicalUri = $this->buildCanonicalUri($destPath);
+
+        $copySource = '/' . $this->bucket . '/' . $sourceObjectKey;
+        $contentSha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+        // 准备请求头
+        // 使用 x-amz-metadata-directive: REPLACE 以便写入自定义元数据
+        $headers = array(
+            'host' => $this->endpoint,
+            'x-amz-copy-source' => $copySource,
+            'x-amz-metadata-directive' => 'REPLACE',
+            'x-amz-content-sha256' => $contentSha256,
+            'x-amz-date' => $date
+        );
+
+        // 写入 x-amz-meta-mtime 保留原始时间戳
+        if ($mtime > 0) {
+            $headers['x-amz-meta-mtime'] = $mtime;
+        }
+
+        $signature = $this->getSignature('PUT', $destCanonicalUri, '', $headers, $contentSha256, $shortDate);
+
+        $ch = curl_init();
+        $url = 'https://' . $this->endpoint . $destCanonicalUri;
+
+        $curlHeaders = array();
+        foreach ($headers as $key => $value) {
+            $curlHeaders[] = $key . ': ' . $value;
+        }
+        $curlHeaders[] = 'Authorization: ' . $signature;
+
+        $sslVerify = isset($this->options->sslVerify) && $this->options->sslVerify === 'true';
+
+        curl_setopt_array($ch, array(
+            CURLOPT_URL => $url,
+            CURLOPT_HTTPHEADER => $curlHeaders,
+            CURLOPT_CUSTOMREQUEST => 'PUT',
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
+            CURLOPT_HEADER => true
+        ));
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($httpCode !== 200) {
+            $errorMsg = "复制文件失败，HTTP状态码：{$httpCode}";
+            if ($curlError) {
+                $errorMsg .= "，cURL错误：{$curlError}";
+            }
+            $errorMsg .= "\n源：{$sourcePath} -> 目标：{$destPath}\n响应：{$response}";
+            S3Upload_Utils::log($errorMsg, 'error');
+            throw new Exception($errorMsg);
+        }
+
+        S3Upload_Utils::log("复制成功: {$sourcePath} -> {$destPath} (mtime={$mtime})", 'debug');
+
+        return array(
+            'path' => $destPath,
+            'url' => $this->getObjectUrl($destPath)
+        );
+    }
+
+    /**
      * 删除 S3 对象
      */
     public function deleteObject($path)
