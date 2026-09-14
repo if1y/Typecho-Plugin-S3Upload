@@ -18,15 +18,24 @@ class S3Upload_Utils
      */
     public static function log($message, $level = 'info')
     {
+        // 读取日志开关，配置不可用时视为禁用，避免影响上传主流程
+        try {
+            $options = \Typecho\Widget::widget('Widget\Options')->plugin('S3Upload');
+            $enable = isset($options->enableLog) ? (string) $options->enableLog : '0';
+        } catch (\Throwable $e) {
+            $enable = '0';
+        }
+
+        // 未开启日志时直接返回，不创建任何目录或文件
+        if ($enable !== '1' && $enable !== 'true') {
+            return;
+        }
+
         $date = date('Y-m-d H:i:s');
         $logMessage = "[{$date}] [{$level}] {$message}\n";
-        
-        $logDir = __TYPECHO_ROOT_DIR__ . '/usr/logs';
-        if (!is_dir($logDir)) {
-            mkdir($logDir, 0755, true);
-        }
-        
-        $logFile = $logDir . '/s3upload.log';
+
+        // 日志写入插件目录下的 log.txt
+        $logFile = __DIR__ . '/log.txt';
         error_log($logMessage, 3, $logFile);
     }
 

@@ -9,12 +9,10 @@ use Typecho\Widget\Helper\Layout;
 
 /**
  * S3 协议上传插件
- *  ① 路径格式从 /year/month 改为 /cid
- *  ② 简化数据库字段写入
  * 
  * @package S3Upload
- * @author if1y
- * @version 1.3.3_custom
+ * @author WannαFly
+ * @version 2.0.1
  * @link https://github.com/if1y/Typecho-Plugin-S3Upload
  * @dependence 1.3-*
  */
@@ -214,6 +212,20 @@ class S3Upload_Plugin implements PluginInterface
             _t('是否验证S3服务器的SSL证书。如果上传失败且服务器SSL证书配置有问题，可以尝试禁用此选项')
         );
         $form->addInput($sslVerify);
+
+        // 日志设置
+        $logPath = __DIR__ . '/log.txt';
+        $enableLog = new \Typecho\Widget\Helper\Form\Element\Radio(
+            'enableLog',
+            [
+                '1' => _t('启用'),
+                '0' => _t('禁用'),
+            ],
+            '0',
+            _t('日志记录'),
+            _t('是否启用日志记录，默认关闭。<br/>开启后日志将追加写入此文件：<code>') . $logPath . '</code>'
+        );
+        $form->addInput($enableLog);
     }
 
     /**
